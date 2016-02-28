@@ -72,9 +72,8 @@ def readDXT1(file, width, height):
                     row = rows[3 - y]
                     colorIndex = (colorIndexes >> (2 * (15 - i))) & 3
                     colorValue = colorValues[colorIndex]
-                    row.append(colorValue[0])
-                    row.append(colorValue[1])
-                    row.append(colorValue[2])
+                    for i in range(0, 3):
+                        row.append(colorValue[i])
                     row.append(255)
         for row in rows:
             for n in row:
