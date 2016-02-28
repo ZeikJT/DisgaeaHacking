@@ -130,7 +130,7 @@ def readPaletteAndData(file, width, height, paletteCount):
 def makePNG(fileName):
     tx2 = open(fileName, 'rb')
     width,height,type,unknown1,unknown2,paletteCount,unknown3,one1 = struct.unpack('<HHHBBHLH', tx2.read(16))
-    if (one1 != 1 or not(type == 0 or type == 2 or type == 3 or type == 16)):
+    if (one1 != 1 or not(type == 0 or type == 2 or type == 3 or type == 16) or (type == 16 and paletteCount <= 0)):
         print('Unknown Header', fileName, [type, unknown1, unknown2, unknown3, one1])
     else:
         png = open(fileName + '.PNG', 'wb')
@@ -145,7 +145,7 @@ def makePNG(fileName):
             idat.addBytes(zlib.compress(readDXT5(tx2, width, height)))
         elif (type == 3):
             idat.addBytes(zlib.compress(readBGRAintoRGBA(tx2, width, height)))
-        elif (type == 16 and paletteCount > 0):
+        elif (type == 16):
             idat.addBytes(zlib.compress(readPaletteAndData(tx2, width, height, paletteCount)))
 
         png.write(idat.getBytes())
