@@ -1,6 +1,9 @@
 #!/usr/bin/python
 import operator,os.path,struct,sys,zlib
 
+''' Only works to convert TX2s in Disgaea PC to PNGs.
+    There's also some weird blocky-alpha around the BU*.TX2s that needs fixing. '''
+
 class Chunk:
     def __init__(self, name):
         self.name = name
@@ -54,6 +57,30 @@ def makeColorValues(c0, c1):
         values.append(preMultBlack)
     return values
 
+def readDXT1(file, width, height):
+    out = bytearray()
+    for h in range(0, int(height / 4)):
+        rows = [[0] for n in range(0, 4)]
+        for w in range(0, int(width / 4)):
+            color = file.read(8)
+            c0,c1 = struct.unpack('<HH', color[:4])
+            colorValues = makeColorValues(c0, c1)
+            colorIndexes, = struct.unpack('<L', color[4:])
+            for y in range(0, 4):
+                for x in range(0, 4):
+                    i = (3 - x) + (y * 4)
+                    row = rows[3 - y]
+                    colorIndex = (colorIndexes >> (2 * (15 - i))) & 3
+                    colorValue = colorValues[colorIndex]
+                    row.append(colorValue[0])
+                    row.append(colorValue[1])
+                    row.append(colorValue[2])
+                    row.append(255)
+        for row in rows:
+            for n in row:
+                out.append(n)
+    return out
+
 def readDXT5(file, width, height):
     out = bytearray()
     for h in range(0, int(height / 4)):
@@ -95,21 +122,17 @@ def readPaletteAndData(file, width, height, paletteCount):
             indexes = rowData[w]
             rgba1 = palette[indexes & 15]
             rgba2 = palette[(indexes >> 4) & 15]
-            out.append(rgba1[0])
-            out.append(rgba1[1])
-            out.append(rgba1[2])
-            out.append(rgba1[3])
-            out.append(rgba2[0])
-            out.append(rgba2[1])
-            out.append(rgba2[2])
-            out.append(rgba2[3])
+            for i in range(0, 4):
+                out.append(rgba1[i])
+            for i in range(0, 4):
+                out.append(rgba2[i])
     return out
 
 def makePNG(fileName):
     tx2 = open(fileName, 'rb')
     width,height,type,unknown1,unknown2,paletteCount,unknown3,one1 = struct.unpack('<HHHBBHLH', tx2.read(16))
-    if (one1 != 1 or not(type == 2 or type == 3 or type == 16)):
-        print('Unknown Header', fileName, [type, unknown1, unknown2, unknown3, unknown4, one1])
+    if (one1 != 1 or not(type == 0 or type == 2 or type == 3 or type == 16)):
+        print('Unknown Header', fileName, [type, unknown1, unknown2, unknown3, one1])
     else:
         png = open(fileName + '.PNG', 'wb')
         png.write(b'\x89PNG\x0D\x0A\x1A\x0A')
@@ -117,8 +140,10 @@ def makePNG(fileName):
         ihdr.addBytes(struct.pack('>LLBBBBB', width, height, 8, 6, 0, 0, 0))
         png.write(ihdr.getBytes())
         idat = Chunk('IDAT')
+        if (type == 0):
+            idat.addBytes(zlib.compress(readDXT1(tx2, width, height)))
         if (type == 2):
-            idat.addBytes(zlib.compress(readDXT5(tx2, width, height), 0))
+            idat.addBytes(zlib.compress(readDXT5(tx2, width, height)))
         elif (type == 3):
             idat.addBytes(zlib.compress(readBGRAintoRGBA(tx2, width, height)))
         elif (type == 16 and paletteCount > 0):
