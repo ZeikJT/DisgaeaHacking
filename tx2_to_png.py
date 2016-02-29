@@ -1,7 +1,7 @@
 #!/usr/bin/python
 import operator,os.path,struct,sys,zlib
 
-''' Version 0.0.3
+''' Version 0.0.4
     Only works to convert TX2s in Disgaea PC to PNGs.
     There's also some weird blocky-alpha around the BU*.TX2s that needs fixing. '''
 
@@ -122,7 +122,7 @@ def getIndexesInByte(byte, bitsPerPixel):
     bitmask = 0
     for b in range(0, bitsPerPixel):
         bitmask = (bitmask << 1) | 1
-    for b in range(0, 8 / bitsPerPixel):
+    for b in range(0, int(8 / bitsPerPixel)):
         indexes.append((byte >> (b * bitsPerPixel)) & bitmask)
     return indexes
 
@@ -135,8 +135,8 @@ def readPaletteAndData(file, width, height, paletteCount, bitsPerPixel):
     pixelsPerByte = int(8 / bitsPerPixel)
     for h in range(0, height):
         out.append(0)
-        rowData = file.read(int(round(width / pixelsPerByte)))
-        for w in range(0, int(round(width / pixelsPerByte))):
+        rowData = file.read(int(width / pixelsPerByte))
+        for w in range(0, int(width / pixelsPerByte)):
             indexes = getIndexesInByte(rowData[w], bitsPerPixel)
             for index in indexes:
                 rgba = palette[index]
