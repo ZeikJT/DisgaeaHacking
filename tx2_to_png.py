@@ -1,7 +1,8 @@
 #!/usr/bin/python
 import operator,os.path,struct,sys,zlib
 
-''' Only works to convert TX2s in Disgaea PC to PNGs.
+''' Version 0.0.3
+    Only works to convert TX2s in Disgaea PC to PNGs.
     There's also some weird blocky-alpha around the BU*.TX2s that needs fixing. '''
 
 class Chunk:
@@ -80,14 +81,14 @@ def readDXT1(file, width, height):
                 out.append(n)
     return out
 
-def readDXT5(file, width, height):
+def readDXT3orDXT5(file, width, height, isDXT3 = False):
     out = bytearray()
     for h in range(0, int(height / 4)):
         rows = [[0] for n in range(0, 4)]
         for w in range(0, int(width / 4)):
             alpha = file.read(8)
-            alphaValues = makeAlphaValues(alpha[0], alpha[1])
-            alphaIndexes, = struct.unpack('<Q', alpha[2:] + b'\x00\x00')
+            alphaValues = struct.unpack('<Q', alpha)[0] if isDXT3 else makeAlphaValues(alpha[0], alpha[1])
+            alphaIndexes = None if isDXT3 else struct.unpack('<Q', alpha[2:] + b'\x00\x00')[0]
             color = file.read(8)
             c0,c1 = struct.unpack('<HH', color[:4])
             colorValues = makeColorValues(c0, c1)
@@ -98,40 +99,56 @@ def readDXT5(file, width, height):
                     row = rows[3 - y]
                     colorIndex = (colorIndexes >> (2 * (15 - i))) & 3
                     colorValue = colorValues[colorIndex]
-                    alphaIndex = (alphaIndexes >> (3 * (15 - i))) & 7
                     row.append(colorValue[0])
                     row.append(colorValue[1])
                     row.append(colorValue[2])
-                    row.append(alphaValues[alphaIndex])
+                    if isDXT3:
+                        row.append((alphaValues >> (4 * (15 - i)) & 15) * 17)
+                    else:
+                        alphaIndex = (alphaIndexes >> (3 * (15 - i))) & 7
+                        row.append(alphaValues[alphaIndex])
         for row in rows:
             for n in row:
                 out.append(n)
     return out
 
-def readPaletteAndData(file, width, height, paletteCount):
+def readDXT5(file, width, height):
+    return readDXT3orDXT5(file, width, height)
+
+def getIndexesInByte(byte, bitsPerPixel):
+    if bitsPerPixel == 8:
+        return [byte]
+    indexes = []
+    bitmask = 0
+    for b in range(0, bitsPerPixel):
+        bitmask = (bitmask << 1) | 1
+    for b in range(0, 8 / bitsPerPixel):
+        indexes.append((byte >> (b * bitsPerPixel)) & bitmask)
+    return indexes
+
+def readPaletteAndData(file, width, height, paletteCount, bitsPerPixel):
     out = bytearray()
     palette = []
     for p in range(0, paletteCount):
         rgba = file.read(4)
         palette.append([rgba[0], rgba[1], rgba[2], rgba[3]])
+    pixelsPerByte = int(8 / bitsPerPixel)
     for h in range(0, height):
         out.append(0)
-        rowData = file.read(int(width / 2))
-        for w in range(0, int(width / 2)):
-            indexes = rowData[w]
-            rgba1 = palette[indexes & 15]
-            rgba2 = palette[(indexes >> 4) & 15]
-            for i in range(0, 4):
-                out.append(rgba1[i])
-            for i in range(0, 4):
-                out.append(rgba2[i])
+        rowData = file.read(int(round(width / pixelsPerByte)))
+        for w in range(0, int(round(width / pixelsPerByte))):
+            indexes = getIndexesInByte(rowData[w], bitsPerPixel)
+            for index in indexes:
+                rgba = palette[index]
+                for i in range(0, 4):
+                    out.append(rgba[i])
     return out
 
 def makePNG(fileName):
     tx2 = open(fileName, 'rb')
     width,height,type,unknown1,unknown2,paletteCount,unknown3,one1 = struct.unpack('<HHHBBHLH', tx2.read(16))
-    if (one1 != 1 or not(type == 0 or type == 2 or type == 3 or type == 16) or (type == 16 and paletteCount <= 0)):
-        print('Unknown Header', fileName, [type, unknown1, unknown2, unknown3, one1])
+    if one1 != 1 or not(type == 0 or type == 2 or type == 3 or type == 16 or type == 256) or ((type == 16 or type == 256) and paletteCount <= 0):
+        print('Unknown Header', fileName, [type, paletteCount, unknown1, unknown2, unknown3, one1])
     else:
         png = open(fileName + '.PNG', 'wb')
         png.write(b'\x89PNG\x0D\x0A\x1A\x0A')
@@ -139,15 +156,19 @@ def makePNG(fileName):
         ihdr.addBytes(struct.pack('>LLBBBBB', width, height, 8, 6, 0, 0, 0))
         png.write(ihdr.getBytes())
         idat = Chunk('IDAT')
-        if (type == 0):
+        if type == 0:
             idat.addBytes(zlib.compress(readDXT1(tx2, width, height)))
-        if (type == 2):
+        if type == 2:
+            badAlpha = ((unknown1 == 7 and unknown2 == 7) or (unknown1 == 8 and unknown2 == 8))
+            if badAlpha:
+                print('Unknown issue with alpha on:', fileName)
             idat.addBytes(zlib.compress(readDXT5(tx2, width, height)))
-        elif (type == 3):
+        elif type == 3:
             idat.addBytes(zlib.compress(readBGRAintoRGBA(tx2, width, height)))
-        elif (type == 16):
-            idat.addBytes(zlib.compress(readPaletteAndData(tx2, width, height, paletteCount)))
-
+        elif type == 16:
+            idat.addBytes(zlib.compress(readPaletteAndData(tx2, width, height, paletteCount, 4)))
+        elif type == 256:
+            idat.addBytes(zlib.compress(readPaletteAndData(tx2, width, height, paletteCount, 8)))
         png.write(idat.getBytes())
         iend = Chunk('IEND')
         png.write(iend.getBytes())
