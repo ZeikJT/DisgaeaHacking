@@ -1,7 +1,7 @@
 #!/usr/bin/python
 import operator,os.path,struct,sys,zlib
 
-''' Version 0.0.4
+''' Version 0.0.5
     Only works to convert TX2s in Disgaea PC to PNGs.
     There's also some weird blocky-alpha around the BU*.TX2s that needs fixing. '''
 
@@ -177,4 +177,4 @@ def makePNG(fileName):
 
 for arg in sys.argv[1:]:
     if os.path.isfile(arg):
-        makePNG(arg)
+        makePNG(os.path.abspath(arg))
